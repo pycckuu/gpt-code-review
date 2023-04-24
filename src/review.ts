@@ -4,6 +4,13 @@ import {type ChatCompletionRequestMessage, Configuration, OpenAIApi} from 'opena
 dotenv.config();
 
 const MAX_CONTENT_SIZE = 11_538;
+const TEMPERATURE = process.env['TEMPERATURE'] ? parseFloat(process.env['TEMPERATURE']) : 0.7;
+const MODEL = process.env['MODEL'] || 'MODEL=gpt-3.5-turbo';
+
+if (!process.env['OPENAI_API_KEY']) {
+  console.error('OPENAI_API_KEY is not set');
+  process.exit(1);
+}
 
 export type GitDetails = {
   title: string;
@@ -11,11 +18,6 @@ export type GitDetails = {
   changedFiles: string[];
   diff: string;
 };
-
-if (!process.env['OPENAI_API_KEY']) {
-  console.error('OPENAI_API_KEY is not set');
-  process.exit(1);
-}
 
 const configuration = new Configuration({
   apiKey: process.env['OPENAI_API_KEY'],
@@ -143,9 +145,9 @@ export async function job(gitDetails: GitDetails, verbose = false): Promise<stri
     if (verbose) console.info('Sending request to OpenAI API...');
 
     const completion = await openai.createChatCompletion({
-      model: 'gpt-3.5-turbo',
+      model: MODEL,
       messages,
-      temperature: 0.7,
+      temperature: TEMPERATURE,
     });
 
     if (verbose) console.info('completion:', completion);
