@@ -26,36 +26,23 @@ jobs:
         id: review_script
         run: |
           echo "Latest Git commit SHA: $RELEVANT_SHA"
-          yarn review $RELEVANT_SHA
+          OUTPUT=$(yarn review $RELEVANT_SHA)
+          echo "$OUTPUT"
+          echo "$OUTPUT" > review.txt
         env:
           RELEVANT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Post comment
         uses: actions/github-script@v4
         with:
           github-token: ${{ secrets.GH_PAT }}
-          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
           script: |
-            const output = `**Script Output:**\n${{ steps.review_script.outputs.stdout }}`;
-            const { data: comments } = await github.issues.listComments({
+            const fs = require('fs');
+            const filePath = 'review.txt';
+            const fileContents = fs.readFileSync(filePath, 'utf-8').split('\n').slice(3,-2).join('\n');
+            const output = `**Automatic review for commit ${{ github.event.pull_request.head.sha || github.sha }}:**\n${fileContents}`;
+            await github.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: context.payload.pull_request.number
+              issue_number: context.payload.pull_request.number,
+              body: output
             });
-            if (comments.length > 0) {
-              const commentId = comments[0].id;
-              await github.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: commentId,
-                body: output
-              });
-            } else {
-              await github.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.payload.pull_request.number,
-                body: output
-              });
-            }
-
-

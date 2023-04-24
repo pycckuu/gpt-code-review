@@ -1,5 +1,5 @@
-import {getGitDetails} from './git';
-import {job} from './review';
+import {getGitDetails} from './lib/git';
+import {job} from './lib/review';
 
 // Read args from the command line
 const args = process.argv.slice(2);
@@ -19,6 +19,7 @@ if (gitDetails instanceof Error) {
 job(gitDetails)
   .then((review: string | undefined) => {
     if (!review) {
+      console.log('Review task failed!');
       throw new Error('Review task failed');
     }
 
