@@ -1,0 +1,433 @@
+diff --git a/contracts/contracts/protocol/PrpVoucherGrantor.sol b/contracts/contracts/protocol/PrpVoucherGrantor.sol
+new file mode 100644
+index 00000000..a470e508
+--- /dev/null
++++ b/contracts/contracts/protocol/PrpVoucherGrantor.sol
+@@ -0,0 +1,131 @@
++// SPDX-License-Identifier: SEE LICENSE IN LICENSE
++pragma solidity 0.8.16;
++
++import "../common/ImmutableOwnable.sol";
++import "./interfaces/IVerifier.sol";
++
++interface PoolContract {
++    function increasePRPBalance(uint256 amount, bytes calldata proof) external;
++}
++
++contract PrpVoucherGrantor is ImmutableOwnable {
++    PoolContract public immutable poolContract;
++    IVerifier public immutable verifier;
++
++    mapping(bytes32 => uint256) public voucherRewardBalances;
++    mapping(address => bool) public allowedContracts;
++    mapping(bytes4 => VoucherTerms) public voucherTerms;
++
++    struct VoucherTerms {
++        uint256 prpToGrantLimit;
++        uint256 prpToGrant;
++    }
++
++    uint256 public totalPrpInVouchersGranted;
++
++    // e.utils.id('AMM_ADD_LIQUIDITY').slice(0, 10)
++    bytes4 public immutable AMM_ADD_LIQUIDITY_VOUCHER_TYPE = 0x801898df;
++    // e.utils.id('CONVERT_FEES').slice(0, 10)
++    bytes4 public immutable CONVERT_FEES_VOUCHER_TYPE = 0x427769e4;
++    // e.utils.id('OTHER').slice(0, 10)
++    bytes4 public immutable OTHER_VOUCHER_TYPE = 0x35b65de3;
++
++    event RewardVoucherGenerated(bytes32 secretHash, bytes32 voucherType);
++    event RewardVoucherClaimed(bytes32 secretHash);
++    event VoucherTermsUpdated(
++        bytes32 voucherType,
++        uint256 prpToGrantLimit,
++        uint256 prpToGrant
++    );
++
++    constructor(
++        address _owner,
++        address _poolContract,
++        address _verifier
++    ) ImmutableOwnable(_owner) {
++        poolContract = PoolContract(_poolContract);
++        verifier = IVerifier(_verifier);
++    }
++
++    modifier onlyAllowedContracts() {
++        require(
++            allowedContracts[msg.sender],
++            "PrpVoucherGrantor: Contract not allowed"
++        );
++        _;
++    }
++
++    modifier onlyValidVoucherTypes(bytes4 _voucherType) {
++        require(
++            _voucherType == AMM_ADD_LIQUIDITY_VOUCHER_TYPE ||
++                _voucherType == CONVERT_FEES_VOUCHER_TYPE ||
++                _voucherType == OTHER_VOUCHER_TYPE,
++            "PrpVoucherGrantor: Invalid voucher type"
++        );
++        _;
++    }
++
++    function setAllowedContract(
++        address _contractAddress,
++        bool _status
++    ) external onlyOwner {
++        allowedContracts[_contractAddress] = _status;
++    }
++
++    function generateRewardVoucher(
++        bytes32 _secretHash,
++        uint256 _amount,
++        bytes4 _voucherType
++    ) external onlyAllowedContracts onlyValidVoucherTypes(_voucherType) {
++        VoucherTerms memory voucherTerm = voucherTerms[_voucherType];
++
++        uint256 prpToGrant = _amount;
++        if (
++            _voucherType == AMM_ADD_LIQUIDITY_VOUCHER_TYPE ||
++            _voucherType == CONVERT_FEES_VOUCHER_TYPE
++        ) {
++            prpToGrant = voucherTerm.prpToGrant;
++        }
++
++        require(
++            voucherTerm.prpToGrantLimit >=
++                totalPrpInVouchersGranted + prpToGrant,
++            "PrpVoucherGrantor: Reward limit reached for this voucher"
++        );
++
++        voucherRewardBalances[_secretHash] += prpToGrant;
++        totalPrpInVouchersGranted += prpToGrant;
++        emit RewardVoucherGenerated(_secretHash, _voucherType);
++    }
++
++    function claimRewardVoucher(
++        bytes32 secretHash,
++        bytes calldata _zAccountProof,
++        bytes calldata _secretProof
++    ) external {
++        uint256 rewardAmount = voucherRewardBalances[secretHash];
++
++        require(rewardAmount > 0, "PrpVoucherGrantor: No reward to claim");
++        require(
++            verifier.verifySecret(secretHash, _secretProof),
++            "PrpVoucherGrantor: Invalid secret proof"
++        );
++
++        voucherRewardBalances[secretHash] = 0;
++        // TODO: implement this functionality in Pool contract
++        // poolContract.increasePRPBalance(rewardAmount, _zAccountProof);
++        emit RewardVoucherClaimed(secretHash);
++    }
++
++    function setActionRewardTerms(
++        bytes4 _voucherType,
++        uint256 _prpToGrantLimit,
++        uint256 _prpToGrant
++    ) external onlyOwner onlyValidVoucherTypes(_voucherType) {
++        voucherTerms[_voucherType] = VoucherTerms(
++            _prpToGrantLimit,
++            _prpToGrant
++        );
++        emit VoucherTermsUpdated(_voucherType, _prpToGrantLimit, _prpToGrant);
++    }
++}
+diff --git a/contracts/contracts/protocol/interfaces/IVerifier.sol b/contracts/contracts/protocol/interfaces/IVerifier.sol
+new file mode 100644
+index 00000000..450b5174
+--- /dev/null
++++ b/contracts/contracts/protocol/interfaces/IVerifier.sol
+@@ -0,0 +1,10 @@
++// SPDX-License-Identifier: SEE LICENSE IN LICENSE
++
++pragma solidity 0.8.16;
++
++interface IVerifier {
++    function verifySecret(
++        bytes32 secretHash,
++        bytes calldata proof
++    ) external returns (bool);
++}
+diff --git a/contracts/test/protocol/PrpVoucherGrantor.test.ts b/contracts/test/protocol/PrpVoucherGrantor.test.ts
+new file mode 100644
+index 00000000..ae91cd7e
+--- /dev/null
++++ b/contracts/test/protocol/PrpVoucherGrantor.test.ts
+@@ -0,0 +1,274 @@
++// SPDX-License-Identifier: MIT
++
++import {smock, FakeContract} from '@defi-wonderland/smock';
++import {SignerWithAddress} from '@nomiclabs/hardhat-ethers/signers';
++import {expect} from 'chai';
++import {BigNumber} from 'ethers';
++import {ethers} from 'hardhat';
++
++import {IVerifier} from '../../types/contracts';
++import {PrpVoucherGrantor as PrpVoucherGrantorType} from '../../types/contracts/PrpVoucherGrantor';
++
++describe('PrpVoucherGrantor', function () {
++    let owner: SignerWithAddress,
++        verifier: FakeContract<IVerifier>,
++        poolContract: SignerWithAddress,
++        allowedContract: SignerWithAddress,
++        user: SignerWithAddress;
++    let prpVoucherGrantor: PrpVoucherGrantorType;
++
++    before(async function () {
++        [owner, poolContract, allowedContract, user] =
++            await ethers.getSigners();
++
++        const PrpVoucherGrantor = await ethers.getContractFactory(
++            'PrpVoucherGrantor',
++        );
++
++        verifier = await smock.fake('IVerifier');
++
++        prpVoucherGrantor = await PrpVoucherGrantor.deploy(
++            owner.address,
++            poolContract.address,
++            verifier.address,
++        );
++
++        await prpVoucherGrantor.deployed();
++    });
++
++    describe('Deployment', function () {
++        it('Should set the correct owner, pool contract, and verifier addresses', async function () {
++            expect(await prpVoucherGrantor.OWNER()).to.equal(owner.address);
++            expect(await prpVoucherGrantor.poolContract()).to.equal(
++                poolContract.address,
++            );
++            expect(await prpVoucherGrantor.verifier()).to.equal(
++                verifier.address,
++            );
++        });
++    });
++
++    describe('Setting allowed contracts', function () {
++        it('only allows the owner to set allowed contracts', async function () {
++            await expect(
++                prpVoucherGrantor
++                    .connect(user)
++                    .setAllowedContract(allowedContract.address, true),
++            ).to.be.revertedWith('ImmOwn: unauthorized');
++
++            await expect(
++                prpVoucherGrantor
++                    .connect(owner)
++                    .setAllowedContract(allowedContract.address, true),
++            ).to.not.be.reverted;
++            expect(
++                await prpVoucherGrantor.allowedContracts(
++                    allowedContract.address,
++                ),
++            ).to.be.true;
++        });
++    });
++
++    describe('Generating reward vouchers', function () {
++        const secretHash = ethers.utils.id('test_secret');
++        const amount = BigNumber.from('1000');
++        const invalidVoucherType = '0xdeadbeef';
++
++        beforeEach(async function () {
++            // Allow the allowedContract to call generateRewardVoucher
++            await prpVoucherGrantor
++                .connect(owner)
++                .setAllowedContract(allowedContract.address, true);
++        });
++
++        it('only allows allowed contracts to generate reward vouchers', async function () {
++            await expect(
++                prpVoucherGrantor
++                    .connect(user)
++                    .generateRewardVoucher(
++                        secretHash,
++                        amount,
++                        await prpVoucherGrantor.AMM_ADD_LIQUIDITY_VOUCHER_TYPE(),
++                    ),
++            ).to.be.revertedWith('PrpVoucherGrantor: Contract not allowed');
++        });
++
++        it('generates reward vouchers with valid voucher types', async function () {
++            await prpVoucherGrantor
++                .connect(owner)
++                .setActionRewardTerms(
++                    await prpVoucherGrantor.AMM_ADD_LIQUIDITY_VOUCHER_TYPE(),
++                    amount.mul(2),
++                    amount,
++                );
++            await prpVoucherGrantor
++                .connect(allowedContract)
++                .generateRewardVoucher(
++                    secretHash,
++                    amount,
++                    await prpVoucherGrantor.AMM_ADD_LIQUIDITY_VOUCHER_TYPE(),
++                );
++
++            expect(
++                await prpVoucherGrantor.voucherRewardBalances(secretHash),
++            ).to.equal(amount);
++            expect(
++                await prpVoucherGrantor.totalPrpInVouchersGranted(),
++            ).to.equal(amount);
++        });
++
++        it('reverts when generating reward vouchers with invalid voucher types', async function () {
++            await expect(
++                prpVoucherGrantor
++                    .connect(allowedContract)
++                    .generateRewardVoucher(
++                        secretHash,
++                        amount,
++                        invalidVoucherType,
++                    ),
++            ).to.be.revertedWith('PrpVoucherGrantor: Invalid voucher type');
++        });
++
++        it('reverts when trying to generate a reward voucher beyond the reward limit', async function () {
++            await prpVoucherGrantor
++                .connect(owner)
++                .setActionRewardTerms(
++                    await prpVoucherGrantor.AMM_ADD_LIQUIDITY_VOUCHER_TYPE(),
++                    amount.mul(2),
++                    amount,
++                );
++
++            await prpVoucherGrantor
++                .connect(allowedContract)
++                .generateRewardVoucher(
++                    secretHash,
++                    amount,
++                    await prpVoucherGrantor.AMM_ADD_LIQUIDITY_VOUCHER_TYPE(),
++                );
++            await expect(
++                prpVoucherGrantor
++                    .connect(allowedContract)
++                    .generateRewardVoucher(
++                        secretHash,
++                        amount.mul(2),
++                        await prpVoucherGrantor.AMM_ADD_LIQUIDITY_VOUCHER_TYPE(),
++                    ),
++            ).to.be.revertedWith(
++                'PrpVoucherGrantor: Reward limit reached for this voucher',
++            );
++        });
++    });
++
++    describe('Claiming reward vouchers', function () {
++        const secretHash = ethers.utils.id('test_secret');
++        const zAccountProof = ethers.utils.id('zAccountProof');
++        const secretProof = ethers.utils.id('secretProof');
++        const amount = BigNumber.from('1000');
++
++        beforeEach(async function () {
++            // Allow the allowedContract to call generateRewardVoucher
++            await prpVoucherGrantor
++                .connect(owner)
++                .setAllowedContract(allowedContract.address, true);
++
++            // Set action reward terms and generate a reward voucher
++            await prpVoucherGrantor
++                .connect(owner)
++                .setActionRewardTerms(
++                    await prpVoucherGrantor.AMM_ADD_LIQUIDITY_VOUCHER_TYPE(),
++                    amount.mul(10),
++                    amount,
++                );
++            await prpVoucherGrantor
++                .connect(allowedContract)
++                .generateRewardVoucher(
++                    secretHash,
++                    amount,
++                    await prpVoucherGrantor.AMM_ADD_LIQUIDITY_VOUCHER_TYPE(),
++                );
++        });
++
++        it('claims the reward voucher', async function () {
++            verifier.verifySecret.returns(true);
++
++            await prpVoucherGrantor
++                .connect(user)
++                .claimRewardVoucher(secretHash, zAccountProof, secretProof);
++
++            expect(
++                await prpVoucherGrantor.voucherRewardBalances(secretHash),
++            ).to.equal(0);
++        });
++
++        it('reverts when trying to claim a reward voucher with an incorrect secret proof', async function () {
++            const incorrectSecretProof = ethers.utils.id(
++                'incorrectSecretProof',
++            );
++            verifier.verifySecret.returns(false);
++
++            await expect(
++                prpVoucherGrantor
++                    .connect(user)
++                    .claimRewardVoucher(
++                        secretHash,
++                        zAccountProof,
++                        incorrectSecretProof,
++                    ),
++            ).to.be.revertedWith('PrpVoucherGrantor: Invalid secret proof');
++        });
++
++        it('reverts when trying to claim a reward voucher with no balance', async function () {
++            const noBalanceSecretHash = ethers.utils.id('no_balance_secret');
++            await expect(
++                prpVoucherGrantor
++                    .connect(user)
++                    .claimRewardVoucher(
++                        noBalanceSecretHash,
++                        zAccountProof,
++                        secretProof,
++                    ),
++            ).to.be.revertedWith('PrpVoucherGrantor: No reward to claim');
++        });
++    });
++
++    describe('Setting action reward terms', function () {
++        const amount = BigNumber.from('1000');
++        const invalidVoucherType = '0xdeadbeef';
++
++        it('only allows the owner to set action reward terms', async function () {
++            await expect(
++                prpVoucherGrantor
++                    .connect(user)
++                    .setActionRewardTerms(
++                        await prpVoucherGrantor.AMM_ADD_LIQUIDITY_VOUCHER_TYPE(),
++                        amount,
++                        amount,
++                    ),
++            ).to.be.revertedWith('ImmOwn: unauthorized');
++        });
++
++        it('sets action reward terms with valid voucher types', async function () {
++            await prpVoucherGrantor
++                .connect(owner)
++                .setActionRewardTerms(
++                    await prpVoucherGrantor.AMM_ADD_LIQUIDITY_VOUCHER_TYPE(),
++                    amount,
++                    amount,
++                );
++
++            const rewardTerms = await prpVoucherGrantor.voucherTerms(
++                await prpVoucherGrantor.AMM_ADD_LIQUIDITY_VOUCHER_TYPE(),
++            );
++            expect(rewardTerms.prpToGrantLimit).to.equal(amount);
++            expect(rewardTerms.prpToGrant).to.equal(amount);
++        });
++
++        it('reverts when setting action reward terms with invalid voucher types', async function () {
++            await expect(
++                prpVoucherGrantor
++                    .connect(owner)
++                    .setActionRewardTerms(invalidVoucherType, amount, amount),
++            ).to.be.revertedWith('PrpVoucherGrantor: Invalid voucher type');
++        });
++    });
++});
