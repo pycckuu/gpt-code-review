@@ -1,55 +1,50 @@
 # GPT Code Review
 
-This code provides functionality to review code changes, leveraging the OpenAI
-GPT language model to generate feedback on the provided code changes.
+`gpt-code-review` is a package that helps you review code changes by leveraging
+the OpenAI GPT language model. It generates feedback on code changes, including
+potential bug identification, best practices, security recommendations, and
+ensuring the code changes align with the provided commit messages.
 
-1. executes Git commands to fetch the commit title, description,
-diff, and changed files for a given commit hash.
+## Features
 
-2. creates ChatCompletionRequestMessage objects for the OpenAI API to help
-instruct the AI model and provide the necessary context for code review.
-
-3. calls the OpenAI API to generate code review feedback, and returns the
-AI-generated feedback.
-
-The overall purpose of the code is to leverage the OpenAI GPT language model to
-generate feedback on the code changes. This feedback includes identifying
-potential bugs, missed best practices, security recommendations, and ensuring
-the code changes align with the provided commit messages.
+- Fetches commit title, description, diff, and changed files for a given commit
+  hash using Git commands.
+- Constructs `ChatCompletionRequestMessage` objects for the OpenAI API,
+  providing the necessary context for code review.
+- Calls the OpenAI API to generate code review feedback and returns the
+  AI-generated feedback.
 
 ## Usage
+
 ### In the repository
 
-1. Install the package
+1. Install the package:
 
 ```bash
 yarn add gpt-code-review
 ```
 
-1. Add in .env variables in the root of the repository with the following
-contents:
+2. Create an `.env` file in the root of the repository with the following
+   contents:
 
 ```bash
 OPENAI_API_KEY=<your-openai-api-key>
 GPT_CODE_REVIEW_MODEL=gpt-3.5-turbo
-GPT_CODE_REVIEW_TEMPERATURE=0.7
+GPT_CODE_REVIEW_TEMPERATURE=0.3
 ```
 
-1. Tun review for the most recent commit
+1. Run the review for the most recent commit:
 ```bash
-gpt-code-review $(git rev-parse HEAD)
+yarn gpt-code-review $(git rev-parse HEAD)
 ```
 
-1.
-
-2. Run the package
+### Standalone script to run from the command line
 
 ```bash
-npx gpt-code-review
+npx gpt-code-review <commit-hash>
 ```
 
-
-
+Replace `<commit-hash>` with the commit hash you want to review.
 
 ## MIT License
 
