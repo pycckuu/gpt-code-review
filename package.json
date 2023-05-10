@@ -1,13 +1,14 @@
 {
   "name": "gpt-code-review",
-  "version": "0.2.2",
-  "main": "index.js",
+  "version": "0.2.6",
+  "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
-    "review": "node index.js"
+    "review": "node index.js",
+    "publish:npmjs": "yarn build && yarn publish"
   },
   "bin": {
-    "gpt-code-review": "./index.js"
+    "gpt-code-review": "node dist/index.js"
   },
   "author": "pycckuu <is.markelov@gmail.com>",
   "license": "MIT",

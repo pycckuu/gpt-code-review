@@ -4,7 +4,9 @@ import {type ChatCompletionRequestMessage, Configuration, OpenAIApi} from 'opena
 dotenv.config();
 
 const MAX_CONTENT_SIZE = 11_538;
-const TEMPERATURE = process.env['GPT_CODE_REVIEW_TEMPERATURE'] ? parseFloat(process.env['GPT_CODE_REVIEW_TEMPERATURE']) : 0.3;
+const TEMPERATURE = process.env['GPT_CODE_REVIEW_TEMPERATURE']
+  ? parseFloat(process.env['GPT_CODE_REVIEW_TEMPERATURE'])
+  : 0.3;
 const MODEL = process.env['GPT_CODE_REVIEW_MODEL'] || 'gpt-3.5-turbo';
 
 if (!process.env['OPENAI_API_KEY']) {
@@ -35,27 +37,29 @@ function createReviewTaskMessage(title: string): ChatCompletionRequestMessage {
   const content = `The change has the following title: ${title}.
 
   Your task is:
-  - Review code, give feedback
-  - Find, prioritize bugs
-  - Ensure commit message alignment
-  - Follow best practices, guidelines:
-  - Readability, maintainability, docs
-  - No scope creep
-  - Consistent naming, style
-  - Modular organization
-  - Review performance, optimization:
-  - Spot bottlenecks
-  - Propose improvements
-  - Examine test coverage:
-  - Verify unit tests
-  - Identify edge cases
-  - Assess integration needs
-  - Assess reusability:
-  - Leverage existing resources
-  - Spot reusable components
-  - Confirm compatibility, security
-  - Clarify commit messages
-  - List negative feedback only
+  - Review code changes and provide feedback:
+  - Check for bugs and highlight them.
+  - Verify alignment with commit messages.
+  - Sort issues from major to minor.
+  - Ensure adherence to best practices and project guidelines:
+  - Code readability, maintainability, and documentation.
+  - Consistent naming conventions and coding style.
+  - Modular and organized functions and classes.
+  - Analyze performance and optimization:
+  - Identify potential performance bottlenecks.
+  - Suggest optimizations or efficient algorithms.
+  - Assess test coverage and quality:
+  - Confirm appropriate unit tests are added or updated.
+  - Check for untested edge cases.
+  - Determine if integration tests are needed.
+  - Evaluate code reusability:
+  - Encourage use of existing libraries, frameworks, or code snippets.
+  - Identify opportunities for reusable components or patterns.
+  - Confirm cross-browser and cross-platform compatibility:
+  - Provide security recommendations, if applicable.
+  - Check the commit message for clear descriptions of changes.
+  - Provide feedback as the numbered list.
+  - focus only on negative parts.
 
   Do not provide feedback yet. I will follow-up with a description of the change in a new message.
   `;
@@ -127,6 +131,7 @@ function createSummaryTask(reviewChunk: string): ChatCompletionRequestMessage {
   ${reviewChunk.slice(0, MAX_CONTENT_SIZE)}
   -----
 
+  Combine reviews. Do not introduce yourselves. Do not introduce any intro statements or conclusions. Do not loose information from the original reviews. Make it as the numbered list.
   `;
 
   return {
@@ -202,9 +207,13 @@ export async function job(gitDetails: GitDetails, verbose = false): Promise<stri
   // or you'll receive an error. Therefore, we need to split the diff into
   // a separet review requests and then combine them into a single review.
   const reviews = await requestReviews(gitDetails, verbose);
-  if (!reviews) {
+  if (!reviews || reviews.length === 0) {
     console.error('No reviews were generated.');
     throw new Error('No reviews were generated.');
+  }
+
+  if (reviews.length === 1) {
+    return reviews[0];
   }
 
   const summaryTask = createSummaryTask(reviews.join('---\n'));
