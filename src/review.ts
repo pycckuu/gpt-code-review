@@ -25,39 +25,37 @@ const configuration = new Configuration({
 
 const openai = new OpenAIApi(configuration);
 
-const systemMessage: ChatCompletionRequestMessage = {
+const reviewSystemMessage: ChatCompletionRequestMessage = {
   role: 'system',
   content:
     'You are a programming code change reviewer of the open source code. Provide feedback on the code changes given. Do not introduce yourselves.',
 };
 
-function createTaskMessage(title: string): ChatCompletionRequestMessage {
+function createReviewTaskMessage(title: string): ChatCompletionRequestMessage {
   const content = `The change has the following title: ${title}.
 
   Your task is:
-  - Review code changes and provide feedback:
-  - Check for bugs and highlight them.
-  - Verify alignment with commit messages.
-  - Sort issues from major to minor.
-  - Ensure adherence to best practices and project guidelines:
-  - Code readability, maintainability, and documentation.
-  - Consistent naming conventions and coding style.
-  - Modular and organized functions and classes.
-  - Analyze performance and optimization:
-  - Identify potential performance bottlenecks.
-  - Suggest optimizations or efficient algorithms.
-  - Assess test coverage and quality:
-  - Confirm appropriate unit tests are added or updated.
-  - Check for untested edge cases.
-  - Determine if integration tests are needed.
-  - Evaluate code reusability:
-  - Encourage use of existing libraries, frameworks, or code snippets.
-  - Identify opportunities for reusable components or patterns.
-  - Confirm cross-browser and cross-platform compatibility:
-  - Provide security recommendations, if applicable.
-  - Check the commit message for clear descriptions of changes.
-  - Provide feedback as the numbered list.
-  - focus only on negative parts.
+  - Review code, give feedback
+  - Find, prioritize bugs
+  - Ensure commit message alignment
+  - Follow best practices, guidelines:
+  - Readability, maintainability, docs
+  - No scope creep
+  - Consistent naming, style
+  - Modular organization
+  - Review performance, optimization:
+  - Spot bottlenecks
+  - Propose improvements
+  - Examine test coverage:
+  - Verify unit tests
+  - Identify edge cases
+  - Assess integration needs
+  - Assess reusability:
+  - Leverage existing resources
+  - Spot reusable components
+  - Confirm compatibility, security
+  - Clarify commit messages
+  - List negative feedback only
 
   Do not provide feedback yet. I will follow-up with a description of the change in a new message.
   `;
@@ -108,7 +106,29 @@ Do not provide feedback yet. I will follow-up additional diff in a new message.
 
 function commandToExecuteTheTask(): ChatCompletionRequestMessage {
   const content =
-    'All code changes have been provided. Please provide me with your code review based on all the changes, context & title provided. Make it succinct and to the point using less than 3000 characters.';
+    'All code changes have been provided. Please provide me with your code review based on all the changes, context & title provided. Make it succinct and to the point using less than 3000 characters. Use bullet points to summarize your review.';
+  return {
+    role: 'user',
+    content,
+  };
+}
+
+const summarySystemMessage: ChatCompletionRequestMessage = {
+  role: 'system',
+  content:
+    'You are a programming code change reviewer of the open source code. Combine reviews provided by other reviewers. Do not introduce yourselves. Do not introduce any intro statements or conclusions. Do not loose information from the reviews. Make it as the bullet points.',
+};
+
+function createSummaryTask(reviewChunk: string): ChatCompletionRequestMessage {
+  const content = `
+  Reviews:
+
+  -----
+  ${reviewChunk.slice(0, MAX_CONTENT_SIZE)}
+  -----
+
+  `;
+
   return {
     role: 'user',
     content,
@@ -116,32 +136,17 @@ function commandToExecuteTheTask(): ChatCompletionRequestMessage {
 }
 
 export function logContext(gitDetails: GitDetails) {
-  console.info(systemMessage.content);
-  console.info(createTaskMessage(gitDetails.title));
+  console.info(reviewSystemMessage.content);
+  console.info(createReviewTaskMessage(gitDetails.title));
   console.info(createDescriptionMessage(gitDetails.description).content);
   console.info(createDiffMessage(gitDetails.diff).content);
 }
 
-export async function job(gitDetails: GitDetails, verbose = false): Promise<string | undefined> {
-  if (verbose) logContext(gitDetails);
-
+async function completionRequest(
+  messages: ChatCompletionRequestMessage[],
+  verbose: boolean,
+): Promise<string | undefined> {
   try {
-    const messages = [
-      systemMessage,
-      createTaskMessage(gitDetails.title),
-      createDescriptionMessage(gitDetails.description),
-      // The token limit for gpt-35-turbo is 4096 tokens, whereas the token
-      // limits for gpt-4 and gpt-4-32k are 8192 and 32768 respectively. These
-      // limits include the token count from both the message array sent and the
-      // model response. The number of tokens in the messages array combined
-      // with the value of the max_tokens parameter must stay under these limits
-      // or you'll receive an error.
-      // TODO: combine into several requests if diff is too big
-      ...splitDiff(gitDetails.diff).slice(0, 1),
-      commandToExecuteTheTask(),
-    ];
-
-    if (verbose) console.info('Messages:', messages);
     if (verbose) console.info('Sending request to OpenAI API...');
 
     const completion = await openai.createChatCompletion({
@@ -150,10 +155,58 @@ export async function job(gitDetails: GitDetails, verbose = false): Promise<stri
       temperature: TEMPERATURE,
     });
 
-    if (verbose) console.info('completion:', completion);
     return completion.data.choices[0]?.message?.content;
   } catch (error) {
     console.error('Error while calling OpenAI API:', error);
     return undefined;
   }
+}
+
+async function requestReviews(gitDetails: GitDetails, verbose: boolean): Promise<string[] | undefined> {
+  if (verbose) logContext(gitDetails);
+
+  const diffs = splitDiff(gitDetails.diff);
+  const baseMessage = [
+    reviewSystemMessage,
+    createReviewTaskMessage(gitDetails.title),
+    createDescriptionMessage(gitDetails.description),
+  ];
+
+  const messages: ChatCompletionRequestMessage[][] = [];
+  for (const d of diffs) {
+    messages.push([...baseMessage, d, commandToExecuteTheTask()]);
+  }
+
+  const reviews: string[] = [];
+  for await (const m of messages) {
+    const reviewChunk = await completionRequest(m, verbose);
+    if (reviewChunk) {
+      reviews.push(reviewChunk);
+    }
+  }
+  if (reviews.length === 0) {
+    console.error('No reviews were generated.');
+    return undefined;
+  }
+
+  if (verbose) console.info('reviews:', reviews.join('\n'));
+  return reviews;
+}
+
+export async function job(gitDetails: GitDetails, verbose = false): Promise<string | undefined> {
+  // The token limit for gpt-35-turbo is 4096 tokens, whereas the token
+  // limits for gpt-4 and gpt-4-32k are 8192 and 32768 respectively. These
+  // limits include the token count from both the message array sent and the
+  // model response. The number of tokens in the messages array combined
+  // with the value of the max_tokens parameter must stay under these limits
+  // or you'll receive an error. Therefore, we need to split the diff into
+  // a separet review requests and then combine them into a single review.
+  const reviews = await requestReviews(gitDetails, verbose);
+  if (!reviews) {
+    console.error('No reviews were generated.');
+    throw new Error('No reviews were generated.');
+  }
+
+  const summaryTask = createSummaryTask(reviews.join('---\n'));
+  return await completionRequest([summarySystemMessage, summaryTask], verbose);
 }
