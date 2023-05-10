@@ -19,6 +19,7 @@ if (gitDetails instanceof Error) {
 job(gitDetails)
   .then((review: string | undefined) => {
     if (!review) {
+      console.log('Review task failed!');
       throw new Error('Review task failed');
     }
 
