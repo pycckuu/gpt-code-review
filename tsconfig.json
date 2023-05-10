@@ -1,14 +1,14 @@
 {
   "compilerOptions": {
-    "target": "esnext" /* Set the JavaScript language version for emitted JavaScript and include compatible library declarations. */,
+    "target": "ES2020" /* Set the JavaScript language version for emitted JavaScript and include compatible library declarations. */,
     "lib": [
       "esnext"
     ],
-    "module": "nodenext",
-    "rootDir": "lib",
+    "module": "CommonJS",
+    "esModuleInterop": true,
+    "moduleResolution": "node",
     "allowJs": true,
     "outDir": "dist",
-    "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "strict": true,
     "noImplicitAny": true,
@@ -29,6 +29,6 @@
     "noPropertyAccessFromIndexSignature": true,
     "skipLibCheck": true,
   },
-  "exclude": ["node_modules", "build"],
+  "exclude": ["node_modules"],
   "include": ["lib", "test", "jest.config.js", "index.ts"]
 }
