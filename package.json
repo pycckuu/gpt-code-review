@@ -1,13 +1,13 @@
 {
-  "name": "gpt-auto-code-review",
-  "version": "0.2.0",
+  "name": "gpt-code-review",
+  "version": "0.2.1",
   "main": "index.js",
   "scripts": {
     "build": "tsc",
-    "review": "ts-node src/index.ts"
+    "review": "node index.js"
   },
   "bin": {
-    "gpt-auto-code-review": "./index.js"
+    "gpt-code-review": "./index.js"
   },
   "author": "pycckuu <is.markelov@gmail.com>",
   "license": "MIT",

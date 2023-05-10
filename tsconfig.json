@@ -5,7 +5,7 @@
       "esnext"
     ],
     "module": "nodenext",
-    "rootDir": "src",
+    "rootDir": "lib",
     "allowJs": true,
     "outDir": "dist",
     "esModuleInterop": true,
@@ -30,5 +30,5 @@
     "skipLibCheck": true,
   },
   "exclude": ["node_modules", "build"],
-  "include": ["src", "test", "jest.config.js"]
+  "include": ["lib", "test", "jest.config.js", "index.ts"]
 }
