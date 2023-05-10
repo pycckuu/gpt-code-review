@@ -6,8 +6,8 @@ dotenv.config();
 const MAX_CONTENT_SIZE = 11_538;
 const TEMPERATURE = process.env['GPT_CODE_REVIEW_TEMPERATURE']
   ? parseFloat(process.env['GPT_CODE_REVIEW_TEMPERATURE'])
-  : 0.3;
-const MODEL = process.env['GPT_CODE_REVIEW_MODEL'] || 'gpt-3.5-turbo';
+  : 0.0;
+const MODEL = process.env['GPT_CODE_REVIEW_MODEL'] || 'gpt-4';
 
 if (!process.env['OPENAI_API_KEY']) {
   console.error('OPENAI_API_KEY is not set');
@@ -30,7 +30,7 @@ const openai = new OpenAIApi(configuration);
 const reviewSystemMessage: ChatCompletionRequestMessage = {
   role: 'system',
   content:
-    'You are a programming code change reviewer of the open source code. Provide feedback on the code changes given. Do not introduce yourselves.',
+    'You are a programming code change reviewer of the open source code. Provide feedback on the code changes given. Do not introduce yourselves. Focus only on top-10 (not more) negative parts and on what needs to be changed or improved and how.',
 };
 
 function createReviewTaskMessage(title: string): ChatCompletionRequestMessage {
@@ -110,7 +110,7 @@ Do not provide feedback yet. I will follow-up additional diff in a new message.
 
 function commandToExecuteTheTask(): ChatCompletionRequestMessage {
   const content =
-    'All code changes have been provided. Please provide me with your code review based on all the changes, context & title provided. Make it succinct and to the point using less than 3000 characters. Use bullet points to summarize your review.';
+    'All code changes have been provided. Please provide me with your code review based on all the changes, context & title provided. Make it succinct and to the point using less than 3000 characters. Report only top-10 (up-to) most severe issues as the sorted numbered list (from most to less severe). Add severity level in [] in front of each (low|med|high).';
   return {
     role: 'user',
     content,
@@ -120,7 +120,7 @@ function commandToExecuteTheTask(): ChatCompletionRequestMessage {
 const summarySystemMessage: ChatCompletionRequestMessage = {
   role: 'system',
   content:
-    'You are a programming code change reviewer of the open source code. Combine reviews provided by other reviewers. Do not introduce yourselves. Do not introduce any intro statements or conclusions. Do not loose information from the reviews. Make it as the bullet points.',
+    'You are a programming code change reviewer of the open source code. Combine reviews provided by other reviewers. Do not introduce yourselves. Do not introduce any intro statements or conclusions. Do not loose information from the reviews. Do not mention any reviewers and pretend that you are the only reviewer.',
 };
 
 function createSummaryTask(reviewChunk: string): ChatCompletionRequestMessage {
@@ -131,7 +131,7 @@ function createSummaryTask(reviewChunk: string): ChatCompletionRequestMessage {
   ${reviewChunk.slice(0, MAX_CONTENT_SIZE)}
   -----
 
-  Combine reviews. Do not introduce yourselves. Do not introduce any intro statements or conclusions. Do not loose information from the original reviews. Make it as the numbered list.
+  Combine reviews. Do not introduce yourselves. Do not introduce any intro statements or conclusions. Do not loose information from the original reviews. Report only top-10 (up-to) most severe issues as the sorted numbered list (from most to less severe).
   `;
 
   return {
@@ -172,8 +172,8 @@ async function requestReviews(gitDetails: GitDetails, verbose: boolean): Promise
 
   const diffs = splitDiff(gitDetails.diff);
   const baseMessage = [
-    reviewSystemMessage,
     createReviewTaskMessage(gitDetails.title),
+    reviewSystemMessage,
     createDescriptionMessage(gitDetails.description),
   ];
 
