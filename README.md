@@ -23,22 +23,33 @@ the code changes align with the provided commit messages.
 1. Install the package
 
 ```bash
-yarn add -g gpt-code-review
+yarn add gpt-code-review
 ```
 
-2. Create a `.env` file in the root of the repository with the following
+1. Add in .env variables in the root of the repository with the following
 contents:
 
 ```bash
 OPENAI_API_KEY=<your-openai-api-key>
-MODEL=gpt-3.5-turbo
-TEMPERATURE=0.7
+GPT_CODE_REVIEW_MODEL=gpt-3.5-turbo
+GPT_CODE_REVIEW_TEMPERATURE=0.7
 ```
 
-3. Tun review for the most recent commit
+1. Tun review for the most recent commit
 ```bash
 gpt-code-review $(git rev-parse HEAD)
 ```
+
+1.
+
+2. Run the package
+
+```bash
+npx gpt-code-review
+```
+
+
+
 
 ## MIT License
 
