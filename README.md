@@ -1,4 +1,4 @@
-# GPT-auto-code-review
+# GPT Code Review
 
 This code provides functionality to review code changes, leveraging the OpenAI
 GPT language model to generate feedback on the provided code changes.
@@ -18,6 +18,27 @@ potential bugs, missed best practices, security recommendations, and ensuring
 the code changes align with the provided commit messages.
 
 ## Usage
+### In the repository
+
+1. Install the package
+
+```bash
+yarn add -g gpt-code-review
+```
+
+2. Create a `.env` file in the root of the repository with the following
+contents:
+
+```bash
+OPENAI_API_KEY=<your-openai-api-key>
+MODEL=gpt-3.5-turbo
+TEMPERATURE=0.7
+```
+
+3. Tun review for the most recent commit
+```bash
+gpt-code-review $(git rev-parse HEAD)
+```
 
 ## MIT License
 
