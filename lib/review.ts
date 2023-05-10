@@ -4,8 +4,8 @@ import {type ChatCompletionRequestMessage, Configuration, OpenAIApi} from 'opena
 dotenv.config();
 
 const MAX_CONTENT_SIZE = 11_538;
-const TEMPERATURE = process.env['TEMPERATURE'] ? parseFloat(process.env['TEMPERATURE']) : 0.7;
-const MODEL = process.env['MODEL'] || 'MODEL=gpt-3.5-turbo';
+const TEMPERATURE = process.env['GPT_CODE_REVIEW_TEMPERATURE'] ? parseFloat(process.env['GPT_CODE_REVIEW_TEMPERATURE']) : 0.3;
+const MODEL = process.env['GPT_CODE_REVIEW_MODEL'] || 'gpt-3.5-turbo';
 
 if (!process.env['OPENAI_API_KEY']) {
   console.error('OPENAI_API_KEY is not set');
